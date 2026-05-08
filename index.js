@@ -1,21 +1,44 @@
 import express from "express";
 import puppeteer from "puppeteer";
 import { waitForTimeout } from "./utils.js";
-import { findRowBySubject, getNetflixOTP } from "./puppeteer-function.js";
+import { findRowBySubject, searchOtpText } from "./puppeteer-function.js";
+import { PROVIDERS } from "./constant/providers.js";
 
 const app = express();
 app.use(express.json());
 
 // ===== CONFIG =====
 const PORT = 3000;
-const MAX_WORKERS = 2;
+const MAX_WORKERS = 4;
 
-const ACCOUNTS = [
-  "amrinahafidza@gmail.com",
-  "mmie64812@gmail.com",
-  "mnasi2528@gmail.com",
-  "dwibagaskara66@gmail.com",
-];
+export const getProviderSubjects = (provider) => {
+  switch (provider) {
+    case "netflix":
+      return [
+        "Netflix: Kode masukmu",
+        "Netflix: your sign-in code",
+        "Kode akses sementara Netflix-mu", // Perlu di cari tahu lagi tentang ini
+      ];
+
+    case "zoom":
+      return ["Code for signing in to Zoom"];
+
+    case "chatgpt":
+      return ["Your temporary ChatGPT login code"];
+
+    case "capcut":
+      return [/^\d{4,6} is your verification code$/i];
+
+    case "youtube":
+      return [""];
+
+    case "freepik":
+      return ["Your authentication code"]; // bukan dari gmail tapi
+
+    default:
+      return [];
+  }
+};
 
 // ===== STATE =====
 const queue = [];
@@ -23,22 +46,35 @@ let activeWorkers = 0;
 
 // ===== API =====
 app.post("/get-otp", (req, res) => {
-  const requestId = Date.now();
+  try {
+    const requestId = Date.now();
 
-  const account = req.body.account;
-  if (!account) throw new Error('Missing "account" in req body.');
+    const { account, provider } = req.body;
 
-  queue.push({ requestId, res, account });
+    if (!account || !provider)
+      throw new Error('Missing "account" or "provider" in req body.');
 
-  console.log("📥 Job masuk:", requestId, "->", account);
+    if (!PROVIDERS.includes(provider))
+      throw new Error("this provider is not availabale.");
+
+    queue.push({ requestId, res, account, provider });
+
+    console.log("📥 Job masuk:", requestId, "->", account);
+  } catch (error) {
+    console.error("[GET OTP] ", error?.message);
+    res.status(400).json({ message: error?.message || "something wrong." });
+  }
 });
 
-async function getOTP(page) {
+async function getOTP(page, provider) {
   try {
-    const row = await findRowBySubject(page, [
-      "Netflix: Kode masukmu",
-      // "Kode akses sementara Netflix-mu",
-    ]);
+    const providerSubjects = getProviderSubjects(provider);
+
+    if (!providerSubjects.length) {
+      throw new Error("Provider subject not found.");
+    }
+
+    const row = await findRowBySubject(page, providerSubjects);
 
     if (!row) throw new Error("Inbox not found");
 
@@ -46,7 +82,7 @@ async function getOTP(page) {
       el.closest("tr")?.click();
     });
 
-    const otp = await getNetflixOTP(page);
+    const otp = await searchOtpText(page);
 
     return otp;
   } catch (err) {
@@ -59,7 +95,6 @@ async function getOTP(page) {
 
 // ===== RUN JOB =====
 async function runJob(job) {
-  // limit concurrency
   while (activeWorkers >= MAX_WORKERS) {
     await waitForTimeout(200);
   }
@@ -81,10 +116,11 @@ async function runJob(job) {
     const page = await browser.newPage();
     await page.goto("https://mail.google.com");
 
-    const otp = await getOTP(page);
+    const otp = await getOTP(page, job.provider);
 
     job.res.json({
       otp,
+      provider: job.provider,
       account: job.account,
     });
   } catch (err) {
@@ -104,8 +140,6 @@ async function processQueue() {
     }
 
     const job = queue.shift();
-
-    // jalanin async (parallel)
     runJob(job);
   }
 }

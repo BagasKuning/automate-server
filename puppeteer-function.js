@@ -1,33 +1,33 @@
-export async function findRowBySubject(page, subject, options = {}) {
-  const { timeout = 30000, exact = false } = options;
+export async function findRowBySubject(page, matchers, options = {}) {
+  const { timeout = 30000 } = options;
 
+  // unopen selector: "tr.zA.zE"
   await page.waitForSelector("tr.zA", { timeout });
 
   const rows = await page.$$("tr.zA");
 
-  for (const row of rows) {
-    const text = await row.$eval("span.bog", (el) =>
-      el.innerText.toLowerCase(),
-    );
+  const subjects = await Promise.all(
+    rows.slice(0, 10).map((row) => row.$eval("span.bog", (el) => el.innerText)),
+  );
 
-    // normalize input
-    const subjects = Array.isArray(subject)
-      ? subject.map((s) => s.toLowerCase())
-      : [subject.toLowerCase()];
+  for (const m of matchers) {
+    for (let i = 0; i < subjects.length; i++) {
+      const subject = subjects[i];
+      const lower = subject.toLowerCase();
 
-    const isMatch = subjects.some((s) =>
-      exact ? text === s : text.includes(s),
-    );
+      const isMatch =
+        m instanceof RegExp ? m.test(subject) : lower.includes(m.toLowerCase());
 
-    if (isMatch) {
-      return row;
+      if (isMatch) {
+        return rows[i];
+      }
     }
   }
 
-  throw new Error("ROW_NOT_FOUND");
+  throw new Error("INBOX_ROW_NOT_FOUND");
 }
 
-export async function getNetflixOTP(page) {
+export async function searchOtpText(page) {
   await page.waitForSelector("td[style*='letter-spacing']", {
     timeout: 10000,
   });
@@ -53,3 +53,12 @@ export async function getNetflixOTP(page) {
 
   return otp;
 }
+
+// // case capcut
+// export async function extractOTPFromSubject(row) {
+//   const subject = await row.$eval("span.bog", (el) => el.innerText);
+
+//   const match = subject.match(/\d{4,6}/);
+
+//   return match ? match[0] : null;
+// }
