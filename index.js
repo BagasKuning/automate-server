@@ -17,7 +17,7 @@ export const getProviderSubjects = (provider) => {
       return [
         "Netflix: Kode masukmu",
         "Netflix: your sign-in code",
-        "Kode akses sementara Netflix-mu", // Perlu di cari tahu lagi tentang ini
+        // "Kode akses sementara Netflix-mu", // Perlu di cari tahu lagi tentang ini
       ];
 
     case "zoom":
@@ -29,8 +29,8 @@ export const getProviderSubjects = (provider) => {
     case "capcut":
       return [/^\d{4,6} is your verification code$/i];
 
-    case "youtube":
-      return [""];
+    case "scribd":
+      return [/^Your one-time passcode for Scribd is \d{4,6}$/i];
 
     case "freepik":
       return ["Your authentication code"]; // bukan dari gmail tapi
@@ -81,8 +81,9 @@ async function getOTP(page, provider) {
     await row.evaluate((el) => {
       el.closest("tr")?.click();
     });
+    await waitForTimeout(2674);
 
-    const otp = await searchOtpText(page);
+    const otp = await searchOtpText(page, provider);
 
     return otp;
   } catch (err) {

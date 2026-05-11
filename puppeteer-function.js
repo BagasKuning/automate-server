@@ -4,10 +4,21 @@ export async function findRowBySubject(page, matchers, options = {}) {
   // unopen selector: "tr.zA.zE"
   await page.waitForSelector("tr.zA", { timeout });
 
-  const rows = await page.$$("tr.zA");
+  const newestRows = await page.$$("tr.zA");
+  const unreadRows = [];
+
+  for (const row of newestRows) {
+    const className = await row.evaluate((el) => el.className);
+
+    if (className.includes("zE")) {
+      unreadRows.push(row);
+    }
+  }
 
   const subjects = await Promise.all(
-    rows.slice(0, 10).map((row) => row.$eval("span.bog", (el) => el.innerText)),
+    unreadRows
+      .slice(0, 10)
+      .map((row) => row.$eval("span.bog", (el) => el.innerText)),
   );
 
   for (const m of matchers) {
@@ -19,7 +30,7 @@ export async function findRowBySubject(page, matchers, options = {}) {
         m instanceof RegExp ? m.test(subject) : lower.includes(m.toLowerCase());
 
       if (isMatch) {
-        return rows[i];
+        return unreadRows[i];
       }
     }
   }
@@ -27,10 +38,47 @@ export async function findRowBySubject(page, matchers, options = {}) {
   throw new Error("INBOX_ROW_NOT_FOUND");
 }
 
-export async function searchOtpText(page) {
-  await page.waitForSelector("td[style*='letter-spacing']", {
-    timeout: 10000,
-  });
+export async function searchOtpText(page, provider = null) {
+  // scribd
+  if (provider === "scribd") {
+    try {
+      await page.waitForSelector("table p", {
+        timeout: 10000,
+      });
+    } catch (err) {
+      console.error(err);
+    }
+
+    const otp = await page.evaluate(() => {
+      const candidates = document.querySelectorAll("table p");
+
+      for (const el of candidates) {
+        const text = el.innerText.trim();
+
+        // hanya angka 4-6 digit
+        if (/^\d{4,6}$/.test(text)) {
+          return text;
+        }
+      }
+
+      return null;
+    });
+
+    if (!otp) {
+      throw new Error("OTP_NOT_FOUND");
+    }
+
+    return otp;
+  }
+
+  // default provider
+  try {
+    await page.waitForSelector("td[style*='letter-spacing']", {
+      timeout: 10000,
+    });
+  } catch (err) {
+    console.error(err);
+  }
 
   const otp = await page.evaluate(() => {
     const candidates = document.querySelectorAll("td[style*='letter-spacing']");
@@ -38,7 +86,6 @@ export async function searchOtpText(page) {
     for (const el of candidates) {
       const text = el.innerText.trim();
 
-      // harus pure angka 4-6 digit
       if (/^\d{4,6}$/.test(text)) {
         return text;
       }
