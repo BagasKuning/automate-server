@@ -1,55 +1,47 @@
 import express from "express";
 import puppeteer from "puppeteer";
+import cors from "cors";
 import { waitForTimeout } from "./utils.js";
 import { findRowBySubject, searchOtpText } from "./puppeteer-function.js";
-import { PROVIDERS } from "./constant/providers.js";
+import { PROVIDERS, getProviderSubjects } from "./constant/providers.js";
+
+import dotenv from "dotenv";
+dotenv.config();
 
 const app = express();
 app.use(express.json());
 
-// ===== CONFIG =====
+// CONFIG
 const PORT = 3000;
 const MAX_WORKERS = 4;
 
-export const getProviderSubjects = (provider) => {
-  switch (provider) {
-    case "netflix":
-      return [
-        "Netflix: Kode masukmu",
-        "Netflix: your sign-in code",
-        // "Kode akses sementara Netflix-mu", // Perlu di cari tahu lagi tentang ini
-      ];
-
-    case "zoom":
-      return ["Code for signing in to Zoom"];
-
-    case "chatgpt":
-      return ["Your temporary ChatGPT login code"];
-
-    case "capcut":
-      return [/^\d{4,6} is your verification code$/i];
-
-    case "scribd":
-      return [/^Your one-time passcode for Scribd is \d{4,6}$/i];
-
-    case "freepik":
-      return ["Your authentication code"]; // bukan dari gmail tapi
-
-    default:
-      return [];
-  }
-};
-
-// ===== STATE =====
+// STATE
 const queue = [];
 let activeWorkers = 0;
 
-// ===== API =====
+// API
+const API_KEY = process.env.SERVER_API_KEY;
+
+app.use(cors());
+app.use((req, res, next) => {
+  const userKey = req.headers["x-api-key"];
+
+  if (userKey && userKey === API_KEY) {
+    return next(); // client masi gagal kirim "x-api-key"
+  }
+
+  return res.status(401).json({ message: "Unauthorized: Invalid API Key" });
+});
+
 app.post("/get-otp", (req, res) => {
   try {
     const requestId = Date.now();
 
-    const { account, provider } = req.body;
+    const { account, provider, password } = req.body;
+
+    if (!account.includes("gmail.com") && !password) {
+      throw new Error('"password" must be filled.');
+    }
 
     if (!account || !provider)
       throw new Error('Missing "account" or "provider" in req body.');
@@ -57,7 +49,7 @@ app.post("/get-otp", (req, res) => {
     if (!PROVIDERS.includes(provider))
       throw new Error("this provider is not availabale.");
 
-    queue.push({ requestId, res, account, provider });
+    queue.push({ requestId, res, account, provider, password });
 
     console.log("📥 Job masuk:", requestId, "->", account);
   } catch (error) {
@@ -74,13 +66,16 @@ async function getOTP(page, provider) {
       throw new Error("Provider subject not found.");
     }
 
-    const row = await findRowBySubject(page, providerSubjects);
+    const row = await findRowBySubject(page, providerSubjects, provider);
 
     if (!row) throw new Error("Inbox not found");
 
-    await row.evaluate((el) => {
-      el.closest("tr")?.click();
-    });
+    await row.evaluate((el, provider) => {
+      const target =
+        provider === "freepik" ? el.querySelector("a") : el.closest("tr") || el;
+
+      target?.click();
+    }, provider);
     await waitForTimeout(2674);
 
     const otp = await searchOtpText(page, provider);
@@ -94,7 +89,7 @@ async function getOTP(page, provider) {
   }
 }
 
-// ===== RUN JOB =====
+// RUN JOB
 async function runJob(job) {
   while (activeWorkers >= MAX_WORKERS) {
     await waitForTimeout(200);
@@ -114,8 +109,57 @@ async function runJob(job) {
       args: ["--no-sandbox"],
     });
 
-    const page = await browser.newPage();
-    await page.goto("https://mail.google.com");
+    const pages = await browser.pages();
+    const page = pages[0];
+
+    if (job.account.includes("xyz")) {
+      await page.goto("https://srv101.niagahoster.com:2096", {
+        waitUntil: "networkidle2",
+      });
+
+      await page.waitForSelector("#user", { timeout: 30000 });
+      await page.waitForSelector("#pass", { timeout: 30000 });
+
+      const userInput = await page.$("#user");
+      const passwordInput = await page.$("#pass");
+      const submitButton = await page.$("#login_submit");
+
+      // clear input (lebih clean)
+      await userInput.click({ clickCount: 3 });
+      await page.keyboard.press("Backspace");
+
+      await passwordInput.click({ clickCount: 3 });
+      await page.keyboard.press("Backspace");
+
+      // isi ulang
+      await userInput.type(job.account, { delay: 20 });
+      await passwordInput.type(job.password, { delay: 20 });
+
+      await submitButton.click();
+
+      // =========================
+      // WAIT LOGIN RESULT
+      // =========================
+      await page.waitForNavigation({
+        waitUntil: "networkidle2",
+        timeout: 60000,
+      });
+
+      const currentUrl = page.url();
+
+      const success =
+        currentUrl.includes("/cpsess") || currentUrl.includes("roundcube");
+
+      if (!success) {
+        throw new Error("LOGIN_FAILED_XYZ");
+      }
+
+      console.log("✅ Login XYZ berhasil:", currentUrl);
+    } else {
+      await page.goto("https://mail.google.com", {
+        waitUntil: "networkidle2",
+      });
+    }
 
     const otp = await getOTP(page, job.provider);
 
@@ -132,7 +176,7 @@ async function runJob(job) {
   }
 }
 
-// ===== QUEUE PROCESSOR =====
+// QUEUE PROCESSOR
 async function processQueue() {
   while (true) {
     if (queue.length === 0) {
@@ -145,7 +189,7 @@ async function processQueue() {
   }
 }
 
-// ===== START =====
+// START
 (async () => {
   processQueue();
 

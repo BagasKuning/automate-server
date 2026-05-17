@@ -1,10 +1,10 @@
-export function waitForTimeout(ms) {
+function waitForTimeout(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
 }
 
-export async function waitForText(page, text, options = {}) {
+async function waitForText(page, text, options = {}) {
   const {
     timeout = 30000,
     polling = 100,
@@ -40,3 +40,9 @@ export async function waitForText(page, text, options = {}) {
     { selector, text, visible },
   );
 }
+
+function getRandomInt({ min, max }) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+export { waitForTimeout, waitForText, getRandomInt };

@@ -1,41 +1,106 @@
-export async function findRowBySubject(page, matchers, options = {}) {
-  const { timeout = 30000 } = options;
+import { waitForTimeout } from "./utils.js";
 
-  // unopen selector: "tr.zA.zE"
-  await page.waitForSelector("tr.zA", { timeout });
+export async function findRowBySubject(
+  page,
+  matchers,
+  provider = null,
+  options = {},
+) {
+  const { timeout = 30000, retries = 3, refreshDelay = 2000 } = options;
 
-  const newestRows = await page.$$("tr.zA");
-  const unreadRows = [];
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      // FREEPIK / ROUNDCUBE
+      if (provider === "freepik") {
+        await page.waitForSelector("tr.message", { timeout });
 
-  for (const row of newestRows) {
-    const className = await row.evaluate((el) => el.className);
+        const rows = await page.$$("tr.message");
 
-    if (className.includes("zE")) {
-      unreadRows.push(row);
-    }
-  }
+        const subjects = await Promise.all(
+          rows.slice(0, 10).map(async (row) => {
+            try {
+              return await row.$eval("span.subject a span", (el) =>
+                el.innerText.trim(),
+              );
+            } catch {
+              return "";
+            }
+          }),
+        );
 
-  const subjects = await Promise.all(
-    unreadRows
-      .slice(0, 10)
-      .map((row) => row.$eval("span.bog", (el) => el.innerText)),
-  );
+        for (const m of matchers) {
+          for (let i = 0; i < subjects.length; i++) {
+            const subject = subjects[i];
+            const lower = subject.toLowerCase();
 
-  for (const m of matchers) {
-    for (let i = 0; i < subjects.length; i++) {
-      const subject = subjects[i];
-      const lower = subject.toLowerCase();
+            const isMatch =
+              m instanceof RegExp
+                ? m.test(subject)
+                : lower.includes(m.toLowerCase());
 
-      const isMatch =
-        m instanceof RegExp ? m.test(subject) : lower.includes(m.toLowerCase());
+            if (isMatch) {
+              return rows[i];
+            }
+          }
+        }
 
-      if (isMatch) {
-        return unreadRows[i];
+        throw new Error("INBOX_ROW_NOT_FOUND");
       }
+
+      // DEFAULT GMAIL
+      await page.waitForSelector("tr.zA", { timeout });
+
+      const newestRows = await page.$$("tr.zA");
+      const unreadRows = [];
+
+      for (const row of newestRows) {
+        const className = await row.evaluate((el) => el.className);
+
+        if (className.includes("zE")) {
+          unreadRows.push(row);
+        }
+      }
+
+      const subjects = await Promise.all(
+        unreadRows
+          .slice(0, 10)
+          .map((row) => row.$eval("span.bog", (el) => el.innerText)),
+      );
+
+      for (const m of matchers) {
+        for (let i = 0; i < subjects.length; i++) {
+          const subject = subjects[i];
+          const lower = subject.toLowerCase();
+
+          const isMatch =
+            m instanceof RegExp
+              ? m.test(subject)
+              : lower.includes(m.toLowerCase());
+
+          if (isMatch) {
+            return unreadRows[i];
+          }
+        }
+      }
+
+      throw new Error("INBOX_ROW_NOT_FOUND");
+    } catch (err) {
+      console.log(`[findRowBySubject] attempt ${attempt} failed:`, err.message);
+
+      if (attempt === retries) {
+        throw new Error("INBOX_ROW_NOT_FOUND");
+      }
+
+      // =========================
+      // REFRESH STRATEGY
+      // =========================
+      await page.reload({
+        waitUntil: "networkidle2",
+      });
+
+      await waitForTimeout(refreshDelay);
     }
   }
-
-  throw new Error("INBOX_ROW_NOT_FOUND");
 }
 
 export async function searchOtpText(page, provider = null) {
@@ -73,7 +138,7 @@ export async function searchOtpText(page, provider = null) {
 
   // default provider
   try {
-    await page.waitForSelector("td[style*='letter-spacing']", {
+    await page.waitForSelector("[style*='letter-spacing']", {
       timeout: 10000,
     });
   } catch (err) {
@@ -81,7 +146,7 @@ export async function searchOtpText(page, provider = null) {
   }
 
   const otp = await page.evaluate(() => {
-    const candidates = document.querySelectorAll("td[style*='letter-spacing']");
+    const candidates = document.querySelectorAll("[style*='letter-spacing']");
 
     for (const el of candidates) {
       const text = el.innerText.trim();
