@@ -4,6 +4,19 @@ function waitForTimeout(ms) {
   });
 }
 
+function withTimeout(fn, ms = 60000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error("JOB_TIMEOUT_60S"));
+    }, ms);
+
+    fn()
+      .then(resolve)
+      .catch(reject)
+      .finally(() => clearTimeout(timer));
+  });
+}
+
 async function waitForText(page, text, options = {}) {
   const {
     timeout = 30000,
@@ -45,4 +58,4 @@ function getRandomInt({ min, max }) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-export { waitForTimeout, waitForText, getRandomInt };
+export { waitForTimeout, waitForText, getRandomInt, withTimeout };

@@ -1,7 +1,7 @@
 import express from "express";
 import puppeteer from "puppeteer";
 import cors from "cors";
-import { waitForTimeout } from "./utils.js";
+import { waitForTimeout, withTimeout } from "./utils.js";
 import { findRowBySubject, searchOtpText } from "./puppeteer-function.js";
 import { PROVIDERS, getProviderSubjects } from "./data/providers.js";
 
@@ -97,95 +97,10 @@ async function getOTP(page, provider) {
   }
 }
 
-// RUN JOB
-async function runJob(job) {
-  while (activeWorkers >= MAX_WORKERS) {
-    await waitForTimeout(200);
-  }
-
-  activeWorkers++;
-
-  let browser;
-
-  try {
-    console.log(`🚀 Start ${job.requestId} | ${job.account}`);
-
-    browser = await puppeteer.launch({
-      headless: false,
-      executablePath: String.raw`C:\Program Files\Google\Chrome\Application\chrome.exe`,
-      userDataDir: `C:/puppeteer-profiles/${job.account}`,
-      args: ["--no-sandbox"],
-    });
-
-    const pages = await browser.pages();
-    const page = pages[0];
-
-    if (job.account.includes("xyz")) {
-      await page.goto("https://srv101.niagahoster.com:2096", {
-        waitUntil: "networkidle2",
-      });
-
-      await page.waitForSelector("#user", { timeout: 30000 });
-      await page.waitForSelector("#pass", { timeout: 30000 });
-
-      const userInput = await page.$("#user");
-      const passwordInput = await page.$("#pass");
-      const submitButton = await page.$("#login_submit");
-
-      // clear input (lebih clean)
-      await userInput.click({ clickCount: 3 });
-      await page.keyboard.press("Backspace");
-
-      await passwordInput.click({ clickCount: 3 });
-      await page.keyboard.press("Backspace");
-
-      // isi ulang
-      await userInput.type(job.account, { delay: 20 });
-      await passwordInput.type(job.password, { delay: 20 });
-
-      await submitButton.click();
-
-      // =========================
-      // WAIT LOGIN RESULT
-      // =========================
-      await page.waitForNavigation({
-        waitUntil: "networkidle2",
-        timeout: 60000,
-      });
-
-      const currentUrl = page.url();
-
-      const success =
-        currentUrl.includes("/cpsess") || currentUrl.includes("roundcube");
-
-      if (!success) {
-        throw new Error("LOGIN_FAILED_XYZ");
-      }
-
-      console.log("✅ Login XYZ berhasil:", currentUrl);
-    } else {
-      await page.goto("https://mail.google.com", {
-        waitUntil: "networkidle2",
-      });
-    }
-
-    const otp = await getOTP(page, job.provider);
-
-    job.res.json({
-      otp,
-      provider: job.provider,
-      account: job.account,
-    });
-  } catch (err) {
-    job.res.status(500).json({ error: err.message });
-  } finally {
-    if (browser) await browser.close();
-    activeWorkers--;
-  }
-}
-
 // QUEUE PROCESSOR
 async function processQueue() {
+  const browserMap = new Map();
+
   while (true) {
     if (queue.length === 0) {
       await waitForTimeout(200);
@@ -193,8 +108,113 @@ async function processQueue() {
     }
 
     const job = queue.shift();
-    runJob(job);
+
+    while (activeWorkers >= MAX_WORKERS) {
+      await waitForTimeout(200);
+    }
+
+    activeWorkers++;
+
+    let browser;
+
+    try {
+      browser = await puppeteer.launch({
+        headless: false,
+        executablePath: String.raw`C:\Program Files\Google\Chrome\Application\chrome.exe`,
+        userDataDir: `C:/puppeteer-profiles/${job.account}`,
+        args: ["--no-sandbox"],
+      });
+
+      browserMap.set(job.requestId, browser);
+
+      const task = runJob(job, browser);
+
+      await withTimeout(() => task, 60000);
+
+      browserMap.delete(job.requestId);
+    } catch (err) {
+      console.error("💥 JOB KILLED:", err.message);
+
+      const browser = browserMap.get(job.requestId);
+
+      if (browser) {
+        try {
+          await browser.close();
+        } catch {}
+
+        try {
+          const pid = browser.process()?.pid;
+          if (pid) process.kill(pid, "SIGKILL");
+        } catch {}
+
+        browserMap.delete(job.requestId);
+      }
+
+      try {
+        job.res.status(500).json({
+          error: err.message,
+        });
+      } catch {}
+    } finally {
+      activeWorkers--;
+    }
   }
+}
+
+// RUN JOB
+async function runJob(job, browser) {
+  const pages = await browser.pages();
+  const page = pages[0];
+
+  page.setDefaultTimeout(30000);
+  page.setDefaultNavigationTimeout(30000);
+
+  if (job.account.includes("xyz")) {
+    await page.goto("https://srv101.niagahoster.com:2096", {
+      waitUntil: "networkidle2",
+    });
+
+    await page.waitForSelector("#user", { timeout: 30000 });
+    await page.waitForSelector("#pass", { timeout: 30000 });
+
+    const userInput = await page.$("#user");
+    const passwordInput = await page.$("#pass");
+    const submitButton = await page.$("#login_submit");
+
+    await userInput.click({ clickCount: 3 });
+    await page.keyboard.press("Backspace");
+
+    await passwordInput.click({ clickCount: 3 });
+    await page.keyboard.press("Backspace");
+
+    await userInput.type(job.account, { delay: 20 });
+    await passwordInput.type(job.password, { delay: 20 });
+
+    await submitButton.click();
+
+    await page.waitForNavigation({
+      waitUntil: "networkidle2",
+      timeout: 60000,
+    });
+
+    const currentUrl = page.url();
+
+    if (!currentUrl.includes("/cpsess") && !currentUrl.includes("roundcube")) {
+      throw new Error("LOGIN_FAILED_XYZ");
+    }
+  } else {
+    await page.goto("https://mail.google.com", {
+      waitUntil: "networkidle2",
+    });
+  }
+
+  const otp = await getOTP(page, job.provider);
+
+  job.res.json({
+    otp,
+    provider: job.provider,
+    account: job.account,
+  });
 }
 
 // START

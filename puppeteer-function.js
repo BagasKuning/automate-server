@@ -6,7 +6,7 @@ export async function findRowBySubject(
   provider = null,
   options = {},
 ) {
-  const { timeout = 30000, retries = 3, refreshDelay = 2000 } = options;
+  const { timeout = 20000, retries = 3, refreshDelay = 2000 } = options;
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
