@@ -25,6 +25,7 @@ app.use(express.json());
 
 app.use(cors());
 app.use((req, res, next) => {
+  console.log("[REQ] ", req.url);
   const userKey = req.headers["x-api-key"];
 
   if (userKey && userKey === API_KEY) {
@@ -32,6 +33,12 @@ app.use((req, res, next) => {
   }
 
   return res.status(401).json({ message: "Unauthorized: Invalid API Key" });
+});
+
+app.get("/", (req, res) => {
+  res.status(200).json({
+    message: "OTP Server Ready.",
+  });
 });
 
 app.post("/get-otp", (req, res) => {
