@@ -13,7 +13,7 @@ export const getProviderSubjects = (provider) => {
       return [
         "Netflix: Kode masukmu",
         "Netflix: your sign-in code",
-        // "Kode akses sementara Netflix-mu", // Perlu di cari tahu lagi tentang ini
+        // "Kode akses sementara Netflix-mu", // TODO -
       ];
 
     case "zoom":

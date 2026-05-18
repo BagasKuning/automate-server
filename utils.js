@@ -4,6 +4,14 @@ function waitForTimeout(ms) {
   });
 }
 
+function waitForRandomTimeout(min = 2000, max = 10000) {
+  const ms = Math.floor(Math.random() * (max - min + 1)) + min;
+
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function withTimeout(fn, ms = 60000) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -54,8 +62,4 @@ async function waitForText(page, text, options = {}) {
   );
 }
 
-function getRandomInt({ min, max }) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-export { waitForTimeout, waitForText, getRandomInt, withTimeout };
+export { waitForTimeout, waitForRandomTimeout, waitForText, withTimeout };

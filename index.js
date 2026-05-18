@@ -1,7 +1,7 @@
 import express from "express";
 import puppeteer from "puppeteer";
 import cors from "cors";
-import { waitForTimeout, withTimeout } from "./utils.js";
+import { waitForRandomTimeout, waitForTimeout, withTimeout } from "./utils.js";
 import { findRowBySubject, searchOtpText } from "./puppeteer-function.js";
 import { PROVIDERS, getProviderSubjects } from "./data/providers.js";
 
@@ -25,7 +25,6 @@ app.use(express.json());
 
 app.use(cors());
 app.use((req, res, next) => {
-  console.log("[REQ] ", req.url);
   const userKey = req.headers["x-api-key"];
 
   if (userKey && userKey === API_KEY) {
@@ -59,7 +58,7 @@ app.post("/get-otp", (req, res) => {
 
     queue.push({ requestId, res, account, provider, password });
 
-    console.log("📥 Job masuk:", requestId, "->", account);
+    console.log("📥 QUEUE IN:", account);
   } catch (error) {
     console.error("[GET OTP] ", error?.message);
     res.status(400).json({ message: error?.message || "something wrong." });
@@ -74,6 +73,7 @@ async function getOTP(page, provider) {
       throw new Error("Provider subject not found.");
     }
 
+    await waitForRandomTimeout(3590, 6043);
     const row = await findRowBySubject(page, providerSubjects, provider);
 
     if (!row) throw new Error("Inbox not found");
@@ -84,8 +84,8 @@ async function getOTP(page, provider) {
 
       target?.click();
     }, provider);
-    await waitForTimeout(2674);
 
+    await waitForRandomTimeout(4674, 8342);
     const otp = await searchOtpText(page, provider);
 
     return otp;
@@ -129,7 +129,7 @@ async function processQueue() {
 
       const task = runJob(job, browser);
 
-      await withTimeout(() => task, 60000);
+      await withTimeout(() => task, 120000);
 
       browserMap.delete(job.requestId);
     } catch (err) {
@@ -209,6 +209,7 @@ async function runJob(job, browser) {
   }
 
   const otp = await getOTP(page, job.provider);
+  await browser.close();
 
   job.res.json({
     otp,
