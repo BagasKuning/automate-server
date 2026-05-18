@@ -1,4 +1,4 @@
-const ACCOUNTS = [
+const ACCOUNTS = new Set([
   "amrinahafidza@gmail.com", // netflix
   "tulipbellex@gmail.com", // zoom
   "sofiaivy275@gmail.com", // chatgpt
@@ -14,6 +14,10 @@ const ACCOUNTS = [
   "mmie64812@gmail.com",
   "mnasi2528@gmail.com",
   "dwibagaskara66@gmail.com",
-];
+]);
 
-export { ACCOUNTS };
+function validateAccount(account) {
+  return ACCOUNTS.has(account.toLowerCase().trim());
+}
+
+export { ACCOUNTS, validateAccount };

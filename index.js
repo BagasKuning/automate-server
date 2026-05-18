@@ -3,13 +3,11 @@ import puppeteer from "puppeteer";
 import cors from "cors";
 import { waitForTimeout } from "./utils.js";
 import { findRowBySubject, searchOtpText } from "./puppeteer-function.js";
-import { PROVIDERS, getProviderSubjects } from "./constant/providers.js";
+import { PROVIDERS, getProviderSubjects } from "./data/providers.js";
 
 import dotenv from "dotenv";
+import { ACCOUNTS, validateAccount } from "./data/accounts.js";
 dotenv.config();
-
-const app = express();
-app.use(express.json());
 
 // CONFIG
 const PORT = 3000;
@@ -21,6 +19,9 @@ let activeWorkers = 0;
 
 // API
 const API_KEY = process.env.SERVER_API_KEY;
+
+const app = express();
+app.use(express.json());
 
 app.use(cors());
 app.use((req, res, next) => {
@@ -39,15 +40,15 @@ app.post("/get-otp", (req, res) => {
 
     const { account, provider, password } = req.body;
 
-    if (!account.includes("gmail.com") && !password) {
-      throw new Error('"password" must be filled.');
-    }
-
     if (!account || !provider)
       throw new Error('Missing "account" or "provider" in req body.');
-
-    if (!PROVIDERS.includes(provider))
+    else if (!account.includes("gmail.com") && !password) {
+      throw new Error('"password" must be filled.');
+    } else if (!PROVIDERS.includes(provider))
       throw new Error("this provider is not availabale.");
+    else if (!validateAccount(account)) {
+      throw new Error("ACCOUNT_NOT_ALLOWED");
+    }
 
     queue.push({ requestId, res, account, provider, password });
 
