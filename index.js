@@ -29,10 +29,9 @@ app.get("/", (req, res) => {
   });
 });
 
-
 app.use(cors());
 app.use((req, res, next) => {
-  console.log('[REQ] ', req.url)
+  console.log("[REQ] ", req.url);
   const userKey = req.headers["x-api-key"];
 
   return next(); // client masi gagal kirim "x-api-key"
@@ -64,6 +63,16 @@ app.post("/get-otp", (req, res) => {
   } catch (error) {
     console.error("[GET OTP] ", error?.message);
     res.status(400).json({ message: error?.message || "something wrong." });
+  }
+});
+
+app.get("/accounts", (req, res) => {
+  try {
+    res.json([...ACCOUNTS]);
+  } catch (error) {
+    res.status(500).json({
+      message: error?.message || "failed to fetch accounts",
+    });
   }
 });
 
@@ -136,7 +145,7 @@ async function processQueue() {
       browserMap.delete(job.requestId);
     } catch (err) {
       console.error("💥 JOB KILLED:", err.message);
-      console.log(err)
+      console.log(err);
 
       const browser = browserMap.get(job.requestId);
 
