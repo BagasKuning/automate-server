@@ -23,21 +23,23 @@ const API_KEY = process.env.SERVER_API_KEY;
 const app = express();
 app.use(express.json());
 
-app.use(cors());
-app.use((req, res, next) => {
-  const userKey = req.headers["x-api-key"];
-
-  if (userKey && userKey === API_KEY) {
-    return next(); // client masi gagal kirim "x-api-key"
-  }
-
-  return res.status(401).json({ message: "Unauthorized: Invalid API Key" });
-});
-
 app.get("/", (req, res) => {
   res.status(200).json({
     message: "OTP Server Ready.",
   });
+});
+
+
+app.use(cors());
+app.use((req, res, next) => {
+  console.log('[REQ] ', req.url)
+  const userKey = req.headers["x-api-key"];
+
+  return next(); // client masi gagal kirim "x-api-key"
+  if (userKey && userKey === API_KEY) {
+  }
+
+  return res.status(401).json({ message: "Unauthorized: Invalid API Key" });
 });
 
 app.post("/get-otp", (req, res) => {
@@ -121,7 +123,7 @@ async function processQueue() {
       browser = await puppeteer.launch({
         headless: false,
         executablePath: String.raw`C:\Program Files\Google\Chrome\Application\chrome.exe`,
-        userDataDir: `C:/puppeteer-profiles/${job.account}`,
+        userDataDir: `C:/Google Chrome Portable/GoogleChromePortable/Data/${job.account}`,
         args: ["--no-sandbox"],
       });
 
@@ -129,11 +131,12 @@ async function processQueue() {
 
       const task = runJob(job, browser);
 
-      await withTimeout(() => task, 120000);
+      await withTimeout(() => task, 420000);
 
       browserMap.delete(job.requestId);
     } catch (err) {
       console.error("💥 JOB KILLED:", err.message);
+      console.log(err)
 
       const browser = browserMap.get(job.requestId);
 
@@ -174,8 +177,8 @@ async function runJob(job, browser) {
       waitUntil: "networkidle2",
     });
 
-    await page.waitForSelector("#user", { timeout: 30000 });
-    await page.waitForSelector("#pass", { timeout: 30000 });
+    await page.waitForSelector("#user");
+    await page.waitForSelector("#pass");
 
     const userInput = await page.$("#user");
     const passwordInput = await page.$("#pass");
@@ -194,7 +197,7 @@ async function runJob(job, browser) {
 
     await page.waitForNavigation({
       waitUntil: "networkidle2",
-      timeout: 60000,
+      timeout: 30000,
     });
 
     const currentUrl = page.url();
