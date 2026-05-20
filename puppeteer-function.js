@@ -62,7 +62,7 @@ export async function findRowBySubject(
       }
 
       const subjects = await Promise.all(
-        newestRows
+        unreadRows
           .slice(0, 10)
           .map((row) => row.$eval("span.bog", (el) => el.innerText)),
       );
@@ -78,7 +78,7 @@ export async function findRowBySubject(
               : lower.includes(m.toLowerCase());
 
           if (isMatch) {
-            return newestRows[i];
+            return unreadRows[i];
           }
         }
       }
